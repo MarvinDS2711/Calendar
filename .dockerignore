@@ -1,0 +1,7 @@
+node_modules
+client/dist
+data
+branding/logo.*
+.git
+.env
+test

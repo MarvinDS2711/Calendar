@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/inovacom.db
+      BRANDING_DIR: /app/branding
+    volumes:
+      - inovacom-data:/data          # base de données persistante
+      - ./branding:/app/branding:ro  # logo officiel
+volumes:
+  inovacom-data:
