@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inv-'));
-process.env.DATABASE_PATH = path.join(dir, 'test.db');
+process.env.DATA_DIR = 'memory://';
+delete process.env.DATABASE_URL;
+delete process.env.POSTGRES_URL;
 process.env.BRANDING_DIR = dir;
 process.env.BOOKING_RATE_LIMIT = '1000';
 
@@ -18,17 +20,17 @@ let server, base, db;
 const ADMIN = { email: 'admin@test.fr', password: 'motdepasse-solide' };
 
 before(async () => {
-  db = openDatabase();
+  db = await openDatabase();
   // Ouvert 7j/7, toute la journée, sans délai de prévenance -> tests indépendants de l'heure
   const all = [{ start: '08:00', end: '20:00' }];
-  saveSettings(db, { ...getSettings(db), minNoticeHours: 0, weekly: { 1: all, 2: all, 3: all, 4: all, 5: all, 6: all, 7: all } });
+  await saveSettings(db, { ...(await getSettings(db)), minNoticeHours: 0, weekly: { 1: all, 2: all, 3: all, 4: all, 5: all, 6: all, 7: all } });
   await upsertAdmin(db, ADMIN.email, ADMIN.password);
   server = createApp(db).listen(0);
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => {
+after(async () => {
   server.close();
-  db.close();
+  await db.close();
 });
 
 const json = (method, url, body, headers = {}) =>
@@ -81,14 +83,14 @@ test('réservation puis créneau retiré des disponibilités', async () => {
 test('aucune double réservation, même en simultané', async () => {
   const { date, time } = await firstFreeSlot(1);
   const results = await Promise.all(
-    Array.from({ length: 8 }, (_, i) =>
+    Array.from({ length: 12 }, (_, i) =>
       json('POST', '/api/public/bookings', { ...client(i), date, time }, { 'x-forwarded-for': `10.0.0.${i}` }),
     ),
   );
   const codes = results.map((r) => r.status).sort();
   assert.equal(codes.filter((c) => c === 201).length, 1, `codes: ${codes}`);
-  assert.equal(codes.filter((c) => c === 409).length, 7);
-  const n = db.prepare(`SELECT COUNT(*) n FROM appointments WHERE date = ? AND time = ? AND status <> 'cancelled'`).get(date, time).n;
+  assert.equal(codes.filter((c) => c === 409).length, 11);
+  const { n } = await db.one(`SELECT COUNT(*)::int AS n FROM appointments WHERE date = ? AND time = ? AND status <> 'cancelled'`, [date, time]);
   assert.equal(n, 1);
 });
 
@@ -103,7 +105,7 @@ test("l'admin est protégé côté serveur", async () => {
 
 test('CSRF : origine étrangère refusée', async () => {
   const cookie = await login();
-  const r = await json('PUT', '/api/admin/settings', getSettings(db), { cookie, origin: 'https://evil.example' });
+  const r = await json('PUT', '/api/admin/settings', await getSettings(db), { cookie, origin: 'https://evil.example' });
   assert.equal(r.status, 403);
 });
 
@@ -148,4 +150,15 @@ test('jour bloqué et disponibilité exceptionnelle pris en compte immédiatemen
   r = await json('POST', '/api/admin/overrides', { date, kind: 'custom', ranges: [{ start: '10:00', end: '11:00' }] }, { cookie });
   av = await (await fetch(`${base}/api/public/availability?from=${date}&to=${date}`)).json();
   assert.deepEqual(av.days[date], ['10:00', '10:30']);
+});
+
+test('le point d\'entrée Vercel restaure le chemin réécrit', async () => {
+  const { default: handler } = await import('../api/index.js');
+  const http = await import('node:http');
+  const srv = http.createServer(handler).listen(0);
+  const port = srv.address().port;
+  const r = await fetch(`http://127.0.0.1:${port}/api/index?__path=/api/public/config&x=1`);
+  srv.close();
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).companyName, 'INOVACOM');
 });

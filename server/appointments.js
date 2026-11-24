@@ -9,6 +9,8 @@ export function newReference() {
   return `INV-${s}`;
 }
 
+const iso = (v) => (v instanceof Date ? v.toISOString() : v);
+
 export const toDto = (r) =>
   r && {
     id: r.id,
@@ -24,18 +26,16 @@ export const toDto = (r) =>
     status: r.status,
     notes: r.notes,
     source: r.source,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    createdAt: iso(r.created_at),
+    updatedAt: iso(r.updated_at),
   };
 
-export function insertAppointment(db, a) {
+export async function insertAppointment(db, a) {
   const start = parisDateTime(a.date, a.time);
-  const r = db
-    .prepare(
-      `INSERT INTO appointments (reference, last_name, first_name, email, phone, date, time, duration, start_utc, status, notes, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
+  return db.one(
+    `INSERT INTO appointments (reference, last_name, first_name, email, phone, date, time, duration, start_utc, status, notes, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    [
       newReference(),
       a.lastName,
       a.firstName,
@@ -48,8 +48,9 @@ export function insertAppointment(db, a) {
       a.status || 'confirmed',
       a.notes || '',
       a.source || 'public',
-    );
-  return db.prepare('SELECT * FROM appointments WHERE id = ?').get(r.lastInsertRowid);
+    ],
+  );
 }
 
-export const isUniqueViolation = (err) => /UNIQUE constraint failed/i.test(err?.message || '');
+/** Violation de contrainte d'unicité PostgreSQL */
+export const isUniqueViolation = (err) => err?.code === '23505' || /duplicate key|unique constraint/i.test(err?.message || '');

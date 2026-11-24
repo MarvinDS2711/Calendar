@@ -6,5 +6,5 @@ data/
 *.db-shm
 .env
 .DS_Store
-branding/*
-!branding/README.md
+
+

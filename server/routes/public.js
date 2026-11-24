@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { DateTime } from 'luxon';
-import { immediate, getSettings } from '../db.js';
+import { getSettings, lockBookings } from '../db.js';
 import { computeAvailability, isPublicSlotAvailable } from '../availability.js';
 import { insertAppointment, isUniqueViolation } from '../appointments.js';
 import { bookingSchema, validate, date as dateSchema } from '../validation.js';
@@ -20,8 +20,8 @@ export function publicRoutes(db) {
     message: { error: 'Trop de tentatives. Merci de réessayer dans quelques minutes.' },
   });
 
-  r.get('/config', (req, res) => {
-    const s = getSettings(db);
+  r.get('/config', async (req, res) => {
+    const s = await getSettings(db);
     res.set('Cache-Control', 'no-store');
     res.json({
       companyName: config.companyName,
@@ -34,7 +34,7 @@ export function publicRoutes(db) {
   });
 
   // Ne renvoie QUE des horaires libres — aucune donnée client.
-  r.get('/availability', (req, res) => {
+  r.get('/availability', async (req, res) => {
     const today = nowParis().toISODate();
     const from = dateSchema.safeParse(req.query.from).success ? req.query.from : today;
     let to = dateSchema.safeParse(req.query.to).success ? req.query.to : DateTime.fromISO(from).plus({ days: 41 }).toISODate();
@@ -43,20 +43,21 @@ export function publicRoutes(db) {
     }
     const start = from < today ? today : from;
     res.set('Cache-Control', 'no-store');
-    res.json({ from: start, to, days: to < start ? {} : computeAvailability(db, start, to) });
+    res.json({ from: start, to, days: to < start ? {} : await computeAvailability(db, start, to) });
   });
 
-  r.post('/bookings', bookingLimiter, validate(bookingSchema), (req, res) => {
+  r.post('/bookings', bookingLimiter, validate(bookingSchema), async (req, res) => {
     const b = req.body;
     if (b.website) return res.status(400).json({ error: 'Requête invalide.' }); // robot
 
     try {
-      // Transaction IMMEDIATE : vérification + insertion atomiques.
+      // Transaction + verrou : vérification et insertion atomiques, même avec plusieurs serveurs.
       // L'index unique partiel garantit en plus qu'aucun doublon ne peut exister.
-      const row = immediate(db, () => {
-        if (!isPublicSlotAvailable(db, b.date, b.time)) return null;
-        const { slotDuration } = getSettings(db);
-        return insertAppointment(db, { ...b, duration: slotDuration, source: 'public' });
+      const row = await db.tx(async (t) => {
+        await lockBookings(t);
+        if (!(await isPublicSlotAvailable(t, b.date, b.time))) return null;
+        const { slotDuration } = await getSettings(t);
+        return insertAppointment(t, { ...b, duration: slotDuration, source: 'public' });
       });
       if (!row) {
         return res.status(409).json({

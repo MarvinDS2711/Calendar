@@ -24,18 +24,17 @@ export function generateSlots(ranges, duration, buffer) {
 const overlaps = (aStart, aDur, bStart, bDur, buffer) =>
   aStart < bStart + bDur + buffer && bStart < aStart + aDur + buffer;
 
-function loadOverrides(db, from, to) {
-  const rows = db.prepare('SELECT * FROM date_overrides WHERE date BETWEEN ? AND ?').all(from, to);
+async function loadOverrides(db, from, to) {
+  const rows = await db.all('SELECT * FROM date_overrides WHERE date BETWEEN ? AND ?', [from, to]);
   return new Map(rows.map((r) => [r.date, { ...r, ranges: JSON.parse(r.ranges) }]));
 }
 
-function loadActive(db, from, to, excludeId) {
-  const rows = db
-    .prepare(
-      `SELECT id, date, time, duration FROM appointments
-       WHERE status <> 'cancelled' AND date BETWEEN ? AND ? AND id <> ?`,
-    )
-    .all(from, to, excludeId ?? -1);
+async function loadActive(db, from, to, excludeId) {
+  const rows = await db.all(
+    `SELECT id, date, time, duration FROM appointments
+     WHERE status <> 'cancelled' AND date BETWEEN ? AND ? AND id <> ?`,
+    [from, to, excludeId ?? -1],
+  );
   const byDate = new Map();
   for (const r of rows) {
     if (!byDate.has(r.date)) byDate.set(r.date, []);
@@ -46,16 +45,15 @@ function loadActive(db, from, to, excludeId) {
 
 /**
  * Disponibilités réelles entre deux dates incluses.
- * @returns {Record<string, string[]>} date -> ["09:00", ...]
+ * @returns {Promise<Record<string, string[]>>} date -> ["09:00", ...]
  */
-export function computeAvailability(db, from, to, { excludeId, admin = false } = {}) {
-  const settings = getSettings(db);
+export async function computeAvailability(db, from, to, { excludeId, admin = false } = {}) {
+  const settings = await getSettings(db);
   const now = nowParis();
   const earliest = admin ? now.startOf('day') : now.plus({ hours: settings.minNoticeHours });
   const lastDay = admin ? null : now.startOf('day').plus({ days: settings.horizonDays }).toISODate();
 
-  const overrides = loadOverrides(db, from, to);
-  const active = loadActive(db, from, to, excludeId);
+  const [overrides, active] = await Promise.all([loadOverrides(db, from, to), loadActive(db, from, to, excludeId)]);
   const result = {};
 
   let cursor = DateTime.fromISO(from, { zone: TZ });
@@ -80,18 +78,19 @@ export function computeAvailability(db, from, to, { excludeId, admin = false } =
   return result;
 }
 
-/** Vérifie qu'un créneau est réservable par un client (à appeler dans une transaction). */
-export function isPublicSlotAvailable(db, date, time) {
-  const avail = computeAvailability(db, date, date);
+/** Vérifie qu'un créneau est réservable par un client (à appeler dans une transaction verrouillée). */
+export async function isPublicSlotAvailable(db, date, time) {
+  const avail = await computeAvailability(db, date, date);
   return (avail[date] || []).includes(time);
 }
 
 /** Pour l'admin : un horaire libre (aucun chevauchement avec un autre RDV actif). */
-export function hasConflict(db, date, time, duration, excludeId) {
-  const settings = getSettings(db);
-  const rows = db
-    .prepare(`SELECT time, duration FROM appointments WHERE status <> 'cancelled' AND date = ? AND id <> ?`)
-    .all(date, excludeId ?? -1);
+export async function hasConflict(db, date, time, duration, excludeId) {
+  const settings = await getSettings(db);
+  const rows = await db.all(`SELECT time, duration FROM appointments WHERE status <> 'cancelled' AND date = ? AND id <> ?`, [
+    date,
+    excludeId ?? -1,
+  ]);
   const s = toMinutes(time);
   return rows.some((a) => overlaps(s, duration, toMinutes(a.time), a.duration, settings.bufferMinutes));
 }
