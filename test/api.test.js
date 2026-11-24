@@ -162,3 +162,14 @@ test('le point d\'entrée Vercel restaure le chemin réécrit', async () => {
   assert.equal(r.status, 200);
   assert.equal((await r.json()).companyName, 'INOVACOM');
 });
+
+test('diagnostic /api/health', async () => {
+  const { default: handler } = await import('../api/index.js');
+  const http = await import('node:http');
+  const srv = http.createServer(handler).listen(0);
+  const r = await fetch(`http://127.0.0.1:${srv.address().port}/api/health`);
+  srv.close();
+  const body = await r.json();
+  assert.equal(r.status, 200);
+  assert.equal(body.ok, true);
+});

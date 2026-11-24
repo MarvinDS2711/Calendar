@@ -137,6 +137,9 @@ export async function openDatabase({ url = config.databaseUrl, dir = config.dbDi
     const { default: pg } = await import('pg');
     const pool = new pg.Pool({ connectionString: url, max: config.isServerless ? 3 : 10, idleTimeoutMillis: 10_000 });
     db = pgAdapter(pool);
+  } else if (config.isServerless) {
+    // Vercel : pas de disque permanent, une vraie base PostgreSQL est obligatoire
+    throw Object.assign(new Error('DATABASE_URL manquant sur Vercel'), { code: 'NO_DATABASE_URL' });
   } else {
     const { PGlite } = await import('@electric-sql/pglite');
     if (dir !== 'memory://') fs.mkdirSync(dir, { recursive: true });
