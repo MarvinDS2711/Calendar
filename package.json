@@ -5,7 +5,7 @@
   "description": "INOVACOM — plateforme de prise de rendez-vous pour la migration de messagerie",
   "type": "module",
   "engines": {
-    "node": ">=22.13"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "concurrently -k -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
