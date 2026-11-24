@@ -35,6 +35,16 @@
   background: radial-gradient(circle, rgb(0 169 181 / 0.32), transparent 70%);
   animation: float 22s ease-in-out infinite reverse;
 }
+.logo-watermark {
+  position: absolute;
+  width: min(560px, 70vw);
+  left: -120px;
+  bottom: -60px;
+  opacity: 0.06;
+  transform: rotate(-8deg);
+  filter: saturate(0.6);
+  user-select: none;
+}
 .grid-pattern {
   position: absolute;
   inset: 0;
@@ -89,6 +99,12 @@
   width: 100%;
   margin: 0 auto;
   padding: 24px 24px 48px;
+}
+
+.public__footer-logo {
+  height: 20px;
+  width: auto;
+  opacity: 0.8;
 }
 
 /* Hero */
@@ -728,6 +744,11 @@
 .public__footer {
   position: relative;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
   text-align: center;
   padding: 20px;
   font-size: 0.82rem;
@@ -1024,6 +1045,12 @@
 @media (max-width: 720px) {
   .public__header {
     padding: 16px;
+  }
+  .public__header .brandmark img {
+    height: 36px !important;
+  }
+  .logo-watermark {
+    display: none;
   }
   .public__tag {
     display: none;

@@ -161,10 +161,11 @@ export default function BookingPage() {
         <span className="blob blob--1" />
         <span className="blob blob--2" />
         <span className="grid-pattern" />
+        {config?.logo && <img className="logo-watermark" src={config.logo.url} alt="" />}
       </div>
 
       <header className="public__header">
-        <BrandMark size={34} />
+        <BrandMark size={44} />
         <span className="public__tag">
           <Headset size={15} /> Assistance migration messagerie
         </span>
@@ -340,6 +341,7 @@ export default function BookingPage() {
       </main>
 
       <footer className="public__footer">
+        {config?.logo && <img className="public__footer-logo" src={config.logo.url} alt="" />}
         © {new Date().getFullYear()} {config?.companyName || 'INOVACOM'} · Les horaires sont indiqués à l’heure de Paris
       </footer>
 
